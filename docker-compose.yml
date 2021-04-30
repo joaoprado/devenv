@@ -1,4 +1,4 @@
-version: '3'
+version: '3.4'
 
 networks:
   frontend:
@@ -17,6 +17,19 @@ volumes:
     driver: ${VOLUMES_DRIVER}
 
 services:
+    core:
+      image: tianon/true
+      restart: "no"
+      depends_on:
+        - nginx
+        - mysql
+    support:
+      image: tianon/true
+      restart: "no"
+      depends_on:
+        - redis
+        - minio
+        - mailhog
 ### PHP-FPM ##############################################
     php-fpm:
       build:
@@ -41,104 +54,14 @@ services:
         - DOCKER_TLS_CERTDIR=/certs
         - DOCKER_CERT_PATH=/certs/client
         - FAKETIME=${PHP_FPM_FAKETIME}
-      networks:
-        - backend
-      links:
-        - docker-in-docker
-
-### PHP-FPM 7.1 ##############################################
-    php-fpm-71:
-      build:
-        context: ./php-fpm
-        args:
-          - PHP_VERSION=7.1
-          - http_proxy
-          - https_proxy
-          - no_proxy
-      volumes:
-        - ./php-fpm/php7.4.ini:/usr/local/etc/php/php.ini
-        - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
-        - docker-in-docker:/certs/client
-      expose:
-        - "9000"
-      extra_hosts:
-        - "dockerhost:${DOCKER_HOST_IP}"
-      environment:
-        - PHP_IDE_CONFIG=${PHP_IDE_CONFIG}
-        - DOCKER_HOST=tcp://docker-in-docker:2376
-        - DOCKER_TLS_VERIFY=1
-        - DOCKER_TLS_CERTDIR=/certs
-        - DOCKER_CERT_PATH=/certs/client
-        - FAKETIME=${PHP_FPM_FAKETIME}
-      networks:
-        - backend
-      links:
-        - docker-in-docker
-
-### PHP-FPM 7.2 ##############################################
-    php-fpm-72:
-      build:
-        context: ./php-fpm
-        args:
-          - PHP_VERSION=7.2
-          - http_proxy
-          - https_proxy
-          - no_proxy
-      volumes:
-        - ./php-fpm/php7.4.ini:/usr/local/etc/php/php.ini
-        - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
-        - docker-in-docker:/certs/client
-      expose:
-        - "9000"
-      extra_hosts:
-        - "dockerhost:${DOCKER_HOST_IP}"
-      environment:
-        - PHP_IDE_CONFIG=${PHP_IDE_CONFIG}
-        - DOCKER_HOST=tcp://docker-in-docker:2376
-        - DOCKER_TLS_VERIFY=1
-        - DOCKER_TLS_CERTDIR=/certs
-        - DOCKER_CERT_PATH=/certs/client
-        - FAKETIME=${PHP_FPM_FAKETIME}
-      networks:
-        - backend
-      links:
-        - docker-in-docker
-
-### PHP-FPM 7.3 ##############################################
-    php-fpm-73:
-      build:
-        context: ./php-fpm
-        args:
-          - PHP_VERSION=7.3
-          - http_proxy
-          - https_proxy
-          - no_proxy
-      volumes:
-        - ./php-fpm/php7.4.ini:/usr/local/etc/php/php.ini
-        - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
-        - docker-in-docker:/certs/client
-      expose:
-        - "9000"
-      extra_hosts:
-        - "dockerhost:${DOCKER_HOST_IP}"
-      environment:
-        - PHP_IDE_CONFIG=${PHP_IDE_CONFIG}
-        - DOCKER_HOST=tcp://docker-in-docker:2376
-        - DOCKER_TLS_VERIFY=1
-        - DOCKER_TLS_CERTDIR=/certs
-        - DOCKER_CERT_PATH=/certs/client
-        - FAKETIME=${PHP_FPM_FAKETIME}
-      networks:
-        - backend
-      links:
-        - docker-in-docker
+      network_mode: host
 
 ### NGINX Server #########################################
     nginx:
       build:
         context: ./nginx
         args:
-          - PHP_UPSTREAM_CONTAINER=php-fpm
+          - PHP_UPSTREAM_CONTAINER=127.0.0.1
           - PHP_UPSTREAM_PORT=9000
           - http_proxy
           - https_proxy
@@ -151,11 +74,11 @@ services:
       ports:
         - "80:80"
         - "443:443"
+        - "81:81"
+        - "82:82"
       depends_on:
         - php-fpm
-      networks:
-        - frontend
-        - backend
+      network_mode: host
 
 ### Minio ################################################
     minio:
@@ -164,32 +87,31 @@ services:
         - ${DATA_PATH_HOST}/minio/data:/export
         - ${DATA_PATH_HOST}/minio/config:/root/.minio
       ports:
-        - "${MINIO_PORT}:9000"
+        - "9999:9999"
       environment:
-        - MINIO_ACCESS_KEY=miniodev
-        - MINIO_SECRET_KEY=miniodev
-      networks:
-        - frontend
-        - backend
+        - MINIO_ACCESS_KEY=NYncBmcsUUUUdxq8VKJo
+        - MINIO_SECRET_KEY=5eiCKf0R8EoVKyCJihs8SQ6fzt8Et78843HljfDl
+      network_mode: host
 
 ### MySQL ################################################
     mysql:
       build:
         context: ./mysql
         args:
-          - MYSQL_VERSION=${MYSQL_VERSION}
+          - MYSQL_VERSION=5.7
       environment:
         - MYSQL_DATABASE=${MYSQL_DATABASE}
         - MYSQL_USER=${MYSQL_USER}
         - MYSQL_PASSWORD=${MYSQL_PASSWORD}
         - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
       volumes:
-        - ${DATA_PATH_HOST}/mysql:/var/lib/mysql
+        - ${DATA_PATH_HOST}/mysql:/var/lib/mysql:delegated
         - ${MYSQL_ENTRYPOINT_INITDB}:/docker-entrypoint-initdb.d
+        - ${APP_CODE_PATH_HOST}/dumps:/dumps
       ports:
         - "3306:3306"
-      networks:
-        - backend
+      network_mode: host
+      working_dir: /dumps
 
 ### Redis ################################################
     redis:
@@ -198,8 +120,7 @@ services:
         - ${DATA_PATH_HOST}/redis:/data
       ports:
         - "${REDIS_PORT}:6379"
-      networks:
-        - backend
+      network_mode: host
 
 ### Mailhog ################################################
     mailhog:
@@ -207,9 +128,7 @@ services:
       ports:
         - "1025:1025"
         - "8025:8025"
-      networks:
-        - frontend
-        - backend
+      network_mode: host
 
 ### Docker-in-Docker ################################################
     docker-in-docker:
@@ -222,8 +141,7 @@ services:
         - docker-in-docker:/certs/client
       expose:
         - 2375
-      networks:
-        - backend
+      network_mode: host
 
 ### REDISWEBUI ################################################
     redis-webui:
@@ -232,10 +150,8 @@ services:
       environment:
         - ADMIN_USER=redis
         - ADMIN_PASS=redis
-        - REDIS_1_HOST=redis
+        - REDIS_1_HOST=127.0.0.1
         - REDIS_1_PORT=6379
-      networks:
-        - backend
       ports:
         - "9987:80"
       depends_on:
