@@ -1,9 +1,7 @@
 version: '3.4'
 
 networks:
-  frontend:
-    driver: ${NETWORKS_DRIVER}
-  backend:
+  infra:
     driver: ${NETWORKS_DRIVER}
 
 volumes:
@@ -17,121 +15,58 @@ volumes:
     driver: ${VOLUMES_DRIVER}
 
 services:
-    core:
-      image: tianon/true
-      restart: "no"
-      depends_on:
-        - nginx
-        - mysql
-    support:
-      image: tianon/true
-      restart: "no"
-      depends_on:
-        - redis
-        - minio
-        - mailhog
-### PHP-FPM ##############################################
-    php-fpm:
-      build:
-        context: ./php-fpm
-        args:
-          - PHP_VERSION=7.4
-          - http_proxy
-          - https_proxy
-          - no_proxy
-      volumes:
-        - ./php-fpm/php7.4.ini:/usr/local/etc/php/php.ini
-        - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
-        - docker-in-docker:/certs/client
-      expose:
-        - "9000"
-      extra_hosts:
-        - "dockerhost:${DOCKER_HOST_IP}"
-      environment:
-        - PHP_IDE_CONFIG=${PHP_IDE_CONFIG}
-        - DOCKER_HOST=tcp://docker-in-docker:2376
-        - DOCKER_TLS_VERIFY=1
-        - DOCKER_TLS_CERTDIR=/certs
-        - DOCKER_CERT_PATH=/certs/client
-        - FAKETIME=${PHP_FPM_FAKETIME}
-      network_mode: host
-
-### NGINX Server #########################################
-    nginx:
-      build:
-        context: ./nginx
-        args:
-          - PHP_UPSTREAM_CONTAINER=127.0.0.1
-          - PHP_UPSTREAM_PORT=9000
-          - http_proxy
-          - https_proxy
-          - no_proxy
-      volumes:
-        - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
-        - ${NGINX_HOST_LOG_PATH}:/var/log/nginx
-        - ${NGINX_SITES_PATH}:/etc/nginx/sites-available
-        - ${NGINX_SSL_PATH}:/etc/nginx/ssl
-      ports:
-        - "80:80"
-        - "443:443"
-        - "81:81"
-        - "82:82"
-      depends_on:
-        - php-fpm
-      network_mode: host
-
 ### Minio ################################################
     minio:
+      restart: always
       build: ./minio
       volumes:
         - ${DATA_PATH_HOST}/minio/data:/export
         - ${DATA_PATH_HOST}/minio/config:/root/.minio
-      ports:
-        - "9999:9999"
       environment:
-        - MINIO_ACCESS_KEY=NYncBmcsUUUUdxq8VKJo
-        - MINIO_SECRET_KEY=5eiCKf0R8EoVKyCJihs8SQ6fzt8Et78843HljfDl
+        - MINIO_ACCESS_KEY=laradock
+        - MINIO_SECRET_KEY=laradock
       network_mode: host
 
 ### MySQL ################################################
     mysql:
+      restart: always
       build:
         context: ./mysql
-        args:
-          - MYSQL_VERSION=5.7
       environment:
-        - MYSQL_DATABASE=${MYSQL_DATABASE}
-        - MYSQL_USER=${MYSQL_USER}
-        - MYSQL_PASSWORD=${MYSQL_PASSWORD}
-        - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+        - MYSQL_DATABASE=default
+        - MYSQL_USER=local
+        - MYSQL_PASSWORD=local
+        - MYSQL_ROOT_PASSWORD=root
       volumes:
         - ${DATA_PATH_HOST}/mysql:/var/lib/mysql:delegated
         - ${MYSQL_ENTRYPOINT_INITDB}:/docker-entrypoint-initdb.d
         - ${APP_CODE_PATH_HOST}/dumps:/dumps
-      ports:
-        - "3306:3306"
       network_mode: host
-      working_dir: /dumps
+      expose:
+        - 3306
+      ulimits:
+        nproc: 65535
+        nofile:
+          soft: 26677
+          hard: 46677
 
 ### Redis ################################################
     redis:
+      restart: always
       build: ./redis
       volumes:
         - ${DATA_PATH_HOST}/redis:/data
-      ports:
-        - "${REDIS_PORT}:6379"
       network_mode: host
 
 ### Mailhog ################################################
     mailhog:
+      restart: always
       build: ./mailhog
-      ports:
-        - "1025:1025"
-        - "8025:8025"
       network_mode: host
 
 ### Docker-in-Docker ################################################
     docker-in-docker:
+      restart: always
       image: docker:19.03-dind
       environment:
         DOCKER_TLS_SAN: DNS:docker-in-docker      
@@ -143,26 +78,40 @@ services:
         - 2375
       network_mode: host
 
-### REDISWEBUI ################################################
-    redis-webui:
-      build:
-        context: ./redis-webui
-      environment:
-        - ADMIN_USER=redis
-        - ADMIN_PASS=redis
-        - REDIS_1_HOST=127.0.0.1
-        - REDIS_1_PORT=6379
-      ports:
-        - "9987:80"
-      depends_on:
-        - redis
-
-### REDISWEBUI ################################################
+### REDIS COMMANDER ################################################
     redis-commander:
+      restart: always
       image: rediscommander/redis-commander:latest
       restart: always
       environment:
         - REDIS_HOSTS=local:127.0.0.1:6379
-      ports:
-        - "8081:8081"
+      network_mode: host
+
+### ELASTIC MQ ################################################
+    elasticmq:
+      restart: always
+      image: softwaremill/elasticmq-native:latest
+      restart: always
+      network_mode: host
+      volumes:
+        - ./elasticmq/custom.conf:/opt/elasticmq.conf
+
+### DYNAMODB ################################################
+    dynamodb:
+      restart: always
+      image: amazon/dynamodb-local:latest
+      command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
+      restart: always
+      network_mode: host
+      volumes:
+        - "./.data/dynamodb:/home/dynamodblocal/data"
+      working_dir: /home/dynamodblocal
+
+### DYNAMODB ADMIN ################################################
+    dynamodb-admin:
+      restart: always
+      build: ./dynamodb-admin
+      environment:
+        DYNAMO_ENDPOINT: "http://localhost:8000"
+      restart: always
       network_mode: host
