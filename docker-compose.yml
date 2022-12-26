@@ -13,6 +13,8 @@ volumes:
     driver: ${VOLUMES_DRIVER}
   docker-in-docker:
     driver: ${VOLUMES_DRIVER}
+  mongo:
+    driver: ${VOLUMES_DRIVER}
 
 services:
 ### Minio ################################################
@@ -101,7 +103,6 @@ services:
       restart: always
       image: amazon/dynamodb-local:latest
       command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
-      restart: always
       network_mode: host
       volumes:
         - "./.data/dynamodb:/home/dynamodblocal/data"
@@ -115,3 +116,15 @@ services:
         DYNAMO_ENDPOINT: "http://localhost:8000"
       restart: always
       network_mode: host
+
+### MongoDB ##############################################
+    mongo:
+      build: ./mongo
+      restart: always
+      network_mode: host
+      environment:
+        - MONGO_INITDB_ROOT_USERNAME=root
+        - MONGO_INITDB_ROOT_PASSWORD=root
+      volumes:
+        - ${DATA_PATH_HOST}/mongo:/data/db
+        - ${DATA_PATH_HOST}/mongo_config:/data/configdb
